@@ -2,17 +2,16 @@ const Thing = require('../models/thing');
 const fs = require('fs');
 
 exports.createThing = (req, res, next) => {
-  const thingObject = JSON.parse(req.body.book);  // On récupère l'objet du livre envoyé par le front-end
+  const thingObject = JSON.parse(req.body.book);
 
-  // Si le front-end utilise 'rating' au lieu de 'grade', on transforme ici
+  
   thingObject.ratings.forEach(rating => {
-    if (rating.rating) {  // Si le front-end utilise 'rating' au lieu de 'grade'
-      rating.grade = rating.rating;  // On remplace 'rating' par 'grade'
-      delete rating.rating;  // On supprime 'rating'
+    if (rating.rating) {
+      rating.grade = rating.rating;
+      delete rating.rating;
     }
   });
 
-  // Supprimer des propriétés non nécessaires avant de créer l'objet
   delete thingObject._id;
   delete thingObject._userId;
 
@@ -22,7 +21,6 @@ exports.createThing = (req, res, next) => {
     imageUrl: `${req.protocol}://${req.get('host')}/images/${req.file.filename}`
   });
 
-  // Sauvegarder l'objet dans la base de données
   thing.save()
     .then(() => res.status(201).json({ message: 'Objet enregistré !' }))
     .catch(error => res.status(400).json({ error }));
