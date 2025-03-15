@@ -2,55 +2,62 @@ const multer = require('multer');
 const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
-
-const MIME_TYPES = {
-  'image/jpg': 'jpg',
-  'image/jpeg': 'jpg',
-  'image/png': 'png'
-};
+const Thing = require('../models/thing'); // Import du modèle
 
 const storage = multer.diskStorage({
   destination: (req, file, callback) => {
     callback(null, 'images');
   },
   filename: (req, file, callback) => {
-    const name = file.originalname.split(' ').join('_');
-    const extension = MIME_TYPES[file.mimetype];
-    callback(null, name + Date.now() + '.' + extension);
+    const name = file.originalname.split(' ').join('_').replace(/\.[^/.]+$/, ""); // Supprime l'extension originale
+    callback(null, `${name}_${Date.now()}.webp`); // Enregistre directement en .webp
   }
 });
 
-const multerUpload = multer({ storage: storage }).single('image');
+const multerUpload = multer({ storage }).single('image');
 
-// Middleware pour convertir l'image en WebP
-const convertImageToWebP = (req, res, next) => {
-  if (req.file) {
+const uploadAndConvert = (req, res, next) => {
+  multerUpload(req, res, (err) => {
+    if (err) return res.status(500).json({ message: 'Erreur lors du téléchargement.', error: err });
+
+    if (!req.file) return next();
+
     const imagePath = req.file.path;
-    const webpPath = imagePath.replace(path.extname(imagePath), '.webp');
-
+    
+    // Conversion en WebP avec remplacement du fichier
     sharp(imagePath)
-      .webp({ quality: 50 }) // Qualité de l'image WebP (ajuste selon tes besoins)
-      .toFile(webpPath, (err, info) => {
+      .webp({ quality: 50 })
+      .toBuffer((err, buffer) => {
         if (err) {
-          return res.status(500).json({ message: 'Erreur lors de la conversion de l\'image.', error: err });
+          return res.status(500).json({ message: 'Erreur conversion en WebP.', error: err });
         }
 
-        // Supprimer l'image originale si la conversion est réussie
-        fs.unlink(imagePath, (err) => {
+        fs.writeFile(imagePath, buffer, (err) => {
           if (err) {
-            console.error('Erreur lors de la suppression de l\'image originale:', err);
+            return res.status(500).json({ message: 'Erreur écriture du fichier WebP.', error: err });
+          }
+
+          // Suppression de l'ancienne image si c'est une modification
+          if (req.params.id) {
+            Thing.findOne({ _id: req.params.id })
+              .then(thing => {
+                if (thing && thing.imageUrl) {
+                  const oldFilename = thing.imageUrl.split('/images/')[1];
+                  const oldFilePath = path.join('images', oldFilename);
+
+                  fs.unlink(oldFilePath, (err) => {
+                    if (err) console.error('Erreur suppression ancienne image:', err);
+                  });
+                }
+                next();
+              })
+              .catch(error => res.status(500).json({ message: 'Erreur récupération de l\'ancienne image.', error }));
+          } else {
+            next();
           }
         });
-
-        // Modifier le chemin du fichier pour qu'il pointe vers le fichier WebP
-        req.file.path = webpPath;
-        req.file.filename = path.basename(webpPath);
-        next(); // Passer au middleware suivant (enregistrement du fichier dans la base de données)
       });
-  } else {
-    console.log('pas image')
-    next(); // Si aucune image, on passe au prochain middleware
-  }
+  });
 };
 
-module.exports = { multerUpload, convertImageToWebP };
+module.exports = { uploadAndConvert };
