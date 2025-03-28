@@ -2,15 +2,15 @@ const multer = require('multer');
 const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
-const Thing = require('../models/thing'); // Import du modèle
+const Thing = require('../models/thing');
 
 const storage = multer.diskStorage({
   destination: (req, file, callback) => {
     callback(null, 'images');
   },
   filename: (req, file, callback) => {
-    const name = file.originalname.split(' ').join('_').replace(/\.[^/.]+$/, ""); // Supprime l'extension originale
-    callback(null, `${name}_${Date.now()}.webp`); // Enregistre directement en .webp
+    const name = file.originalname.split(' ').join('_').replace(/\.[^/.]+$/, "");
+    callback(null, `${name}_${Date.now()}.webp`);
   }
 });
 
@@ -24,7 +24,6 @@ const uploadAndConvert = (req, res, next) => {
 
     const imagePath = req.file.path;
     
-    // Conversion en WebP avec remplacement du fichier
     sharp(imagePath)
       .webp({ quality: 50 })
       .toBuffer((err, buffer) => {
@@ -37,7 +36,6 @@ const uploadAndConvert = (req, res, next) => {
             return res.status(500).json({ message: 'Erreur écriture du fichier WebP.', error: err });
           }
 
-          // Suppression de l'ancienne image si c'est une modification
           if (req.params.id) {
             Thing.findOne({ _id: req.params.id })
               .then(thing => {
@@ -53,6 +51,8 @@ const uploadAndConvert = (req, res, next) => {
               })
               .catch(error => res.status(500).json({ message: 'Erreur récupération de l\'ancienne image.', error }));
           } else {
+            req.filePath = imagePath;
+            console.log(req.filePath)
             next();
           }
         });

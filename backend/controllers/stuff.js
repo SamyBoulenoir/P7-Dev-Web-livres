@@ -4,16 +4,22 @@ const fs = require('fs');
 exports.createThing = (req, res, next) => {
   const thingObject = JSON.parse(req.body.book);
 
+  if (!thingObject.year && (!Number.isInteger(thingObject.year) || thingObject.year < 0)) {
+    console.log(req.filePath);
+    if (req.filePath) {
+      fs.unlink(req.filePath, (err) => {
+          if (err) console.error("Erreur, suppression de l'image :", err);
+      });
+  }
+    return res.status(400).json({ error: 'La date fournie est invalide. Elle doit être un nombre positif.' });
+  }
+
   thingObject.ratings.forEach(rating => {
     if (rating.rating) {
       rating.grade = rating.rating;
       delete rating.rating;
     }
   });
-
-  if (thingObject.date && (!Number.isInteger(thingObject.date) || thingObject.date < 0)) {
-    return res.status(400).json({ error: 'La date fournie est invalide. Elle doit être un nombre positif.' });
-  }
 
   delete thingObject._id;
   delete thingObject._userId;
@@ -38,27 +44,67 @@ exports.getOneThing = (req, res, next) => {
     .catch(error => res.status(404).json({ error }));
 };
 
-exports.modifyThing = (req, res, next) => {
+exports.modifyThing = (req, res) => {
   const thingObject = req.file ? {
     ...JSON.parse(req.body.book),
-    imageUrl: `${req.protocol}://${req.get('host')}/images/${req.file.filename}`
+    imageUrl: `${req.protocol}://${req.get('host')}/${req.filePath}`
   } : { ...req.body };
 
   if (thingObject.date && (!Number.isInteger(thingObject.date) || thingObject.date < 0)) {
+    if (req.filePath) {
+      fs.unlink(req.filePath, (err) => {
+        if (err) console.error("Erreur lors de la suppression du fichier :", err);
+      });
+    }
     return res.status(400).json({ error: 'La date fournie est invalide. Elle doit être un nombre positif.' });
   }
 
   delete thingObject._userId;
+
   Thing.findOne({ _id: req.params.id })
     .then(thing => {
+      if (!thing) {
+        if (req.filePath) {
+          fs.unlink(req.filePath, (err) => {
+            if (err) console.error("Erreur lors de la suppression du fichier :", err);
+          });
+        }
+        throw new Error('Objet non trouvé.');
+      }
       if (thing.userId != req.auth.userId) {
+        if (req.filePath) {
+          fs.unlink(req.filePath, (err) => {
+            if (err) console.error("Erreur lors de la suppression du fichier :", err);
+          });
+        }
         return res.status(401).json({ message: 'Not authorized' });
       }
+
       Thing.updateOne({ _id: req.params.id }, { ...thingObject, _id: req.params.id })
-        .then(() => res.status(200).json({ message: 'Objet modifié!' }))
-        .catch(error => res.status(401).json({ error }));
+        .then(() => {
+          if (req.filePath) {
+            const oldFilename = thing.imageUrl.split('/images/')[1];
+            fs.unlink(`images/${oldFilename}`, () => {});
+          }
+          res.status(200).json({ message: 'Objet modifié!' });
+        })
+        .catch(error => {
+          if (req.filePath) {
+            fs.unlink(req.filePath, (err) => {
+              if (err) console.error("Erreur lors de la suppression du fichier :", err);
+            });
+          }
+          res.status(401).json({ error });
+        });
     })
-    .catch(error => res.status(400).json({ error }));
+    .catch(error => {
+      if (req.filePath) {
+        fs.unlink(req.filePath, (err) => {
+          if (err) console.error("Erreur lors de la suppression du fichier :", err);
+        });
+      }
+      res.status(400).json({ error: error.message });
+    });
 };
 
 exports.deleteThing = (req, res, next) => {
